@@ -1,0 +1,113 @@
+#! /usr/bin/python3
+
+# Mike Jovanovich
+# 9/14/2015
+## This program finds all "possible" genes in a fasta
+## file whose name is provided as the first command-line argument.  The 
+## file contains one or more contigs in fasta format. If there is a  #  in
+## column 1, the line is ignored.
+## 
+## Parameters for gene length and start codons and stop codons to search for
+## are obtained by reading a file named p2params which has this format:
+##     99 1500
+##     atg
+##     taa tag tga
+## where the first line contains min and max len of genes; line 2 contains a
+## list of the potential start codons, and line 3 contains the possible stops.
+## 
+## Two or more genes may end at the same stop codon which implies that a long
+## gene may contain a shorter gene which begins in the same reading frame.
+## A gene may occur fully within another gene if the start and stops are in
+## different reading frames.  Likewise, one gene may overlap another, but
+## this implies they are in different reading frames, else they would have
+## to share the stop codon.  Note that a stop "too close" to a start codon
+## causes the start to be terminated without finding a possible gene there.
+## 
+## Genes are retrieved on both the plus and minus strands,
+## where the minus strand is the complement.
+## 
+## Output is producted as loc information. e.g.:
+##   cid3m (2 atg ending at taa; none end at tag)  (107-99 119-111)_119-111
+
+## Example usage:
+##   python3 fasta_file_parse.py T1in 
+
+import sys
+
+def main():
+    if len(sys.argv) != 2:
+        print("This program requires one argument.")
+        return
+
+    # Get command line args
+    param_file = "fasta_params"
+    fasta_file = sys.argv[1]
+
+    # Get params from file
+    min_length = max_length = 0
+    start_codons = stop_codons = []
+    with open(param_file,'r') as f:
+        line = f.readline()
+        # The first line might be a comment
+        if len(line) == 0 or line[0] == '#':
+            line = f.readline()
+        items = line.split()
+        min_length = int(items[0])
+        max_length = int(items[1])
+        start_codons = f.readline().split()
+        stop_codons = f.readline().split()
+
+    # Parse fasta file
+    with open(fasta_file) as f:
+        cid = ""
+        cbuff = ""
+        start_pos = {} #rf, position
+        for line in f:
+            line = line.strip()
+            for i in range(3):
+                start_pos[i] = []
+
+            #skip comments
+            if len(line) == 0 or line[0] == '#':
+                continue
+
+            #parse cid
+            if line[0] == '>':
+                cid = line[1:].strip()
+                continue
+
+            #parse strand forward
+            for i in range(3,len(line)+1):
+                pos = i-3
+                cbuff = line[pos:i]
+                if cbuff in start_codons:
+                    start_pos[pos%3].append(pos+1)
+                if cbuff in stop_codons:
+                    for p in start_pos[pos%3]:
+                        print( "{}_{}+{}".format( cid, p, i-p+1 ) )
+                    start_pos[pos%3] = []
+
+            #parse strand backward
+            pairings = { 'a':'t', 't':'a', 'c':'g', 'g':'c' }
+            line = line[::-1]
+            inverse = ""
+            for i in range(3):
+                start_pos[i] = []
+
+            for c in line:
+                if c in pairings:
+                    inverse += pairings[c]
+                else:
+                    inverse += c
+
+            for i in range(3,len(line)+1):
+                pos = i-3
+                cbuff = inverse[pos:i]
+                if cbuff in start_codons:
+                    start_pos[pos%3].append(pos+1)
+                if cbuff in stop_codons:
+                    for p in start_pos[pos%3]:
+                        print( "{}_{}-{}".format( cid, len(line)-p+1, i-p+1 ) )
+                    start_pos[pos%3] = []
+
+main()
